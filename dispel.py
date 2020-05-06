@@ -68,6 +68,18 @@ def align_with_special_tokens(
     return res
 
 
+# TODO: it should be possible to jit this, but how to deal with the reduction?
+def reduce_chunks(
+    sequence: torch.Tensor,
+    alignment: List[Tuple[int, int]],
+    reduction: Callable[[torch.Tensor], torch.Tensor],
+) -> torch.Tensor:
+    res_lst: List[torch.Tensor] = []
+    for start, end in alignment:
+        res_lst.append(reduction(sequence[start:end, ...]))
+    return torch.stack(res_lst, dim=0)
+
+
 class Vectorizer(torch.nn.Module):
     def __init__(
         self,
@@ -76,7 +88,7 @@ class Vectorizer(torch.nn.Module):
             transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast
         ],
         reduction: Callable[[torch.Tensor], torch.Tensor] = functools.partial(
-            torch.sum, dim=0
+            torch.mean, dim=0
         ),
     ):
         super().__init__()
@@ -122,18 +134,13 @@ class Vectorizer(torch.nn.Module):
         for last_layer, *all_layers, sent_align in zip(
             last_hidden_state, *hidden_states, encoded.alignments
         ):
-            sent_reduced_last = []
-            sent_reduced_all = []
-            for word_start, word_end in sent_align:
-                reduced_last = self.reduction(last_layer[word_start:word_end])
-                sent_reduced_last.append(reduced_last)
-                reduced_all = [
-                    self.reduction(l[word_start:word_end]) for l in all_layers
-                ]
-                sent_reduced_all.append(reduced_all)
+            sent_reduced_last = reduce_chunks(last_layer, sent_align, self.reduction)
+            sent_reduced_all = tuple(
+                reduce_chunks(l, sent_align, self.reduction) for l in all_layers
+            )
             batch_out.append(
                 VectorizedSentence(
-                    last_hidden_state=torch.stack(sent_reduced_last, dim=0),
+                    last_hidden_state=sent_reduced_last,
                     pooler_output=pooler_output,
                     hidden_states=tuple(
                         torch.stack(l, dim=0) for l in zip(*sent_reduced_all)
@@ -165,7 +172,7 @@ class Vectorizer(torch.nn.Module):
         cls,
         pretrained_model_name_or_path: str,
         reduction: Callable[[torch.Tensor], torch.Tensor] = functools.partial(
-            torch.sum, dim=0
+            torch.mean, dim=0
         ),
     ) -> Vectorizer:
         config = transformers.AutoConfig.from_pretrained(
