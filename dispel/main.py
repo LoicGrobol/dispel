@@ -44,6 +44,9 @@ def read_conll(f: pathlib.Path, word_col: int = 0) -> List[List[str]]:
     help=("Number of sentences in a processing batch"),
 )
 @click.option(
+    "--device", type=str, default="cpu", help="A device to use (using pytorch syntax)"
+)
+@click.option(
     "--model",
     type=str,
     default="roberta-base",
@@ -51,9 +54,14 @@ def read_conll(f: pathlib.Path, word_col: int = 0) -> List[List[str]]:
     metavar="NAME_OR_PATH",
 )
 def main(
-    batch_size: int, conll_file: pathlib.Path, model: str, out_file: pathlib.Path,
+    batch_size: int,
+    conll_file: pathlib.Path,
+    device: str,
+    model: str,
+    out_file: pathlib.Path,
 ):
     vecto = Vectorizer.from_pretrained(model)
+    vecto = vecto.to(device)
     vecto.freeze()
     sents = read_conll(conll_file)
     with open(out_file, "w") as out_stream:
