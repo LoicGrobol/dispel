@@ -6,6 +6,7 @@ import click
 import click_pathlib
 import more_itertools
 import torch
+import tqdm
 
 from dispel import Vectorizer
 
@@ -50,16 +51,20 @@ def read_conll(f: pathlib.Path, word_col: int = 0) -> List[List[str]]:
     metavar="NAME_OR_PATH",
 )
 def main(
-    batch_size: int,
-    conll_file: pathlib.Path,
-    model: str,
-    out_file: pathlib.Path,
+    batch_size: int, conll_file: pathlib.Path, model: str, out_file: pathlib.Path,
 ):
     vecto = Vectorizer.from_pretrained(model)
     vecto.freeze()
     sents = read_conll(conll_file)
     with open(out_file, "w") as out_stream:
-        for chunk in more_itertools.chunked(sents, batch_size):
+        pbar = tqdm.tqdm(
+            more_itertools.chunked(sents, batch_size),
+            desc="Vectorizing",
+            leave=False,
+            total=len(sents) // batch_size,
+            unit="batch",
+        )
+        for chunk in pbar:
             with torch.no_grad():
                 chunk_vecs = vecto.vectorize(chunk)
             for sent, sent_vecs in zip(chunk, chunk_vecs):
