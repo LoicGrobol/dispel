@@ -122,17 +122,15 @@ class Vectorizer(torch.nn.Module):
         ]
         return EncodedBatch(batch=encoded, alignments=alignments)
 
-    def forward(self, sentences: Sequence[Sequence[str]]) -> List[VectorizedSentence]:
-        encoded = self.encode(sentences)
+    def forward(self, inpt: EncodedBatch) -> List[VectorizedSentence]:
         pooler_output: torch.Tensor  # Transformers output typing is a bit wild
         last_hidden_state, pooler_output, hidden_states = self.model(
-            input_ids=encoded.batch["input_ids"],
-            attention_mask=encoded.batch["attention_mask"],
-            token_type_ids=encoded.batch["token_type_ids"],
+            input_ids=inpt.batch["input_ids"],
+            attention_mask=inpt.batch["attention_mask"],
         )
         batch_out = []
         for last_layer, *all_layers, sent_align in zip(
-            last_hidden_state, *hidden_states, encoded.alignments
+            last_hidden_state, *hidden_states, inpt.alignments
         ):
             sent_reduced_last = reduce_chunks(last_layer, sent_align, self.reduction)
             sent_reduced_all = tuple(
@@ -149,22 +147,30 @@ class Vectorizer(torch.nn.Module):
             )
         return batch_out
 
+    def vectorize(self, sentences: Sequence[Sequence[str]]) -> List[VectorizedSentence]:
+        """Convenience function that encodes and vectorizes a batch of tokenized sentences."""
+        encoded = self.encode(sentences)
+        return self(encoded)
+
     def freeze(self, freezing: bool = True):
+        """Make the underlying transformer model either finutunable or frozen."""
+
         def no_train(model, mode=True):
             return model
 
         if freezing:
             self.model.eval()
             self.model.train = no_train
-            for p in self.model.network.parameters():
+            for p in self.model.parameters():
                 p.requires_grad = False
         else:
-            for p in self.model.network.parameters():
+            for p in self.model.parameters():
                 p.requires_grad = False
             self.model.train = type(self.model).train
             self.model.train()
 
     def unfreeze(self):
+        """Like `freeze(False)`."""
         self.freeze(freezing=False)
 
     @classmethod
@@ -185,33 +191,3 @@ class Vectorizer(torch.nn.Module):
             pretrained_model_name_or_path
         )
         return cls(model=model, tokenizer=tokenizer, reduction=reduction)
-
-
-if __name__ == "__main__":
-    v = Vectorizer.from_pretrained("camembert-base")
-    sents = [
-        ["Je", "reconnais", "l'", "existence", "du", "kiwi"],
-        ["Moi", "ma", "mère", "la", "vaisselle", "c'", "est", "Ikea"],
-        ["Je", "suis", "con-", "euh", "concentré"],
-        [
-            "se",
-            "le",
-            "virent",
-            "si",
-            "bele",
-            "qu'",
-            "il",
-            "en",
-            "furent",
-            "tot",
-            "esmari",
-        ],
-    ]
-    v.eval()
-    assert all(not p.requires_grad for p in v.parameters())
-    b = v(sents)
-    print(b)
-    assert len(b) == len(sents)
-    for so, se in zip(sents, b):
-        assert se.last_hidden_state.shape[:-1] == torch.Size([len(so)])
-        assert all(l.shape[:-1] == torch.Size([len(so)]) for l in se.hidden_states)
