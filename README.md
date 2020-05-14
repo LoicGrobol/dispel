@@ -16,7 +16,7 @@ pip install git+https://github.com/LoicGrobol/dispel.git
 Here is a short example:
 
 ```console
-dispel --model roberta-base my_raw_corpus.conll word_embeddings.tab
+dispel --model roberta-base local/tests/fixtures/test_sents.conll word_embeddings.tab
 ```
 
 There are other parameters (see `dispel --help` for a comprehensive list).
