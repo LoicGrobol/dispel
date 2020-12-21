@@ -165,7 +165,7 @@ class Vectorizer(torch.nn.Module):
                 p.requires_grad = False
         else:
             for p in self.model.parameters():
-                p.requires_grad = False
+                p.requires_grad = True
             self.model.train = type(self.model).train
             self.model.train()
 
