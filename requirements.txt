@@ -1,6 +1,0 @@
-click
-click_pathlib
-more_itertools
-tokenizers
-torch
-transformers
